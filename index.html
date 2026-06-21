@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GESTIONE SCORTE CASA</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --card: #feffd2;
+    --card-hover: #525a6d00;
+    --border: #000000;
+    --text: #000000;
+    --text-dim: #1c1c1c;
+    --accent: #004cff;
+    --accent-dim: #2a3a5e;
+    --green: #4caf7d;
+    --yellow: #eaad2a;
+    --red: #e2574c;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  header {
+    padding: 20px 24px 0;
+    max-width: 1100px;
+    margin: 0 auto;
+    text-align:center;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 13px; margin-bottom: 16px; }
+
+  nav {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  nav button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    padding: 10px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-weight: 500;
+  }
+  nav button.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px 24px 60px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .toolbar input[type=text], .toolbar select {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .toolbar input[type=text] { flex: 1; min-width: 180px; }
+  .btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn:hover { opacity: 0.9; }
+  .btn-secondary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-danger { background: var(--red); }
+  .btn-small { padding: 5px 10px; font-size: 12px; }
+
+  .section-group { margin-bottom: 28px; }
+  .section-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .count-badge {
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 20px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+  }
+
+  .item-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    transition: background 0.15s;
+    position: relative;
+  }
+  .item-card { transition: box-shadow 0.15s, transform 0.15s; }
+  .item-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+  .item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .item-name { font-weight: 600; font-size: 14px; }
+  .item-qty {
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .item-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .item-tags {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .tag.expiry-ok { background: rgba(76,175,125,0.15); color: var(--green); }
+  .tag.expiry-soon { background: rgba(217,164,65,0.15); color: var(--yellow); }
+  .tag.expiry-bad { background: rgba(226,87,76,0.15); color: var(--red); }
+
+  .item-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .item-actions button {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .item-actions button:hover { color: var(--text); border-color: var(--accent); }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 40px 0;
+    font-size: 13px;
+  }
+
+  /* Modal */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    width: 100%;
+    max-width: 440px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 16px; font-size: 17px; }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 5px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 18px;
+  }
+  .modal-actions .btn, .modal-actions .btn-secondary { flex: 1; }
+
+  .top-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .stats-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .stat-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .stat-box .num { font-size: 18px; font-weight: 700; }
+  .stat-box .label { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; }
+  .stat-box-clickable {
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.15s;
+  }
+  .stat-box-clickable:hover {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    transform: translateY(-2px);
+  }
+
+  .stats-layout {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 18px;
+    align-items: stretch;
+  }
+  .stats-layout .stats-row {
+    flex: 0 0 auto;
+    margin-bottom: 0;
+    align-content: flex-start;
+  }
+  .chart-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    flex: 1;
+    min-width: 280px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+  .chart-box .chart-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    align-self: flex-start;
+  }
+  .chart-box .chart-canvas-wrap {
+    flex-shrink: 0;
+    width: 190px;
+    height: 190px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .chart-box canvas { max-width: 190px; max-height: 190px; }
+  .chart-legend-col {
+    flex: 1;
+    min-width: 0;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .chart-legend-group {
+    margin-bottom: 8px;
+  }
+  .chart-legend-group:last-child { margin-bottom: 0; }
+  .chart-legend-group-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  .chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+  }
+  .chart-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .chart-empty {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 30px 0;
+    text-align: center;
+  }
+
+  /* ============================================================
+     NAVIGAZIONE DRILL-DOWN: Posizione -> Categoria -> Prodotti
+     Le nav-card usano lo stesso linguaggio visivo delle item-card
+     (stesso sfondo, stesso bordo, stessa ombra all'hover) così
+     l'utente capisce immediatamente che sono cliccabili.
+     ============================================================ */
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+  }
+  .breadcrumb-link {
+    cursor: pointer;
+    color: var(--accent);
+    font-weight: 600;
+    transition: opacity 0.15s;
+  }
+  .breadcrumb-link:hover { opacity: 0.7; text-decoration: underline; }
+  .breadcrumb-sep { color: var(--text-dim); opacity: 0.5; }
+  .breadcrumb-current { font-weight: 600; }
+
+  .nav-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .nav-grid.nav-grid-positions {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+  .nav-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.15s;
+    text-align: center;
+  }
+  .nav-card:hover {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  }
+  .nav-card-icon { font-size: 28px; margin-bottom: 8px; display: block; }
+  .nav-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .nav-card-count {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .nav-card-category {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .nav-card-category .cat-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .nav-card-category .nav-card-title { margin-bottom: 0; font-size: 14px; }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏠 Scorte di Casa</h1>
+  <div class="subtitle">Cibo e prodotti stoccati per salvare i nostri moneyyy</div>
+</header>
+
+<nav>
+  <button class="tab-btn active" data-tab="cibo">🍽️ Cibo</button>
+  <button class="tab-btn" data-tab="cura">🧴 Cura personale</button>
+</nav>
+
+<main>
+
+  <!-- TAB CIBO -->
+  <div id="tab-cibo" class="tab-content">
+    <div class="stats-layout">
+      <div class="stats-row" id="cibo-stats"></div>
+      <div class="chart-box">
+        <div class="chart-canvas-wrap">
+          <canvas id="cibo-chart"></canvas>
+        </div>
+        <div class="chart-legend-col" id="cibo-chart-legend"></div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn" id="add-cibo-btn">+ Aggiungi prodotto</button>
+      <button class="btn-secondary btn" id="export-btn">⬇ Esporta backup</button>
+      <button class="btn-secondary btn" id="import-btn">⬆ Importa backup</button>
+      <input type="file" id="import-file" accept=".json" style="display:none">
+    </div>
+
+    <div class="breadcrumb" id="cibo-breadcrumb"></div>
+
+    <div class="toolbar" id="cibo-toolbar" style="display:none">
+      <input type="text" id="cibo-search" placeholder="Cerca prodotto...">
+      <select id="cibo-filter-loc">
+        <option value="">Tutte le posizioni</option>
+        <option value="Dispensa">Dispensa</option>
+        <option value="Frigo">Frigo</option>
+        <option value="Freezer">Freezer</option>
+        <option value="Freezer giù">Freezer giù</option>
+      </select>
+      <select id="cibo-filter-cat">
+        <option value="">Tutte le categorie</option>
+      </select>
+      <select id="cibo-sort">
+        <option value="scadenza">Ordina per scadenza</option>
+        <option value="nome">Ordina per nome</option>
+        <option value="categoria">Ordina per categoria</option>
+      </select>
+    </div>
+
+    <div id="cibo-content"></div>
+  </div>
+
+  <!-- TAB CURA PERSONALE -->
+  <div id="tab-cura" class="tab-content" style="display:none">
+    <div class="stats-row" id="cura-stats"></div>
+
+    <div class="top-actions">
+      <button class="btn" id="add-cura-btn">+ Aggiungi prodotto</button>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" id="cura-search" placeholder="Cerca prodotto...">
+      <select id="cura-filter-cat">
+        <option value="">Tutte le categorie</option>
+        <option value="Detersivi">Detersivi</option>
+        <option value="Shampoo/Bagno doccia">Shampoo/Bagno doccia</option>
+        <option value="Skincare viso">Skincare viso</option>
+        <option value="Corpo">Corpo</option>
+        <option value="Igiene">Igiene</option>
+        <option value="Altro">Altro</option>
+      </select>
+      <select id="cura-sort">
+        <option value="apertura">In uso da più tempo</option>
+        <option value="nome">Ordina per nome</option>
+        <option value="categoria">Ordina per categoria</option>
+      </select>
+    </div>
+
+    <div id="cura-content"></div>
+  </div>
+
+</main>
+
+<!-- MODAL CIBO -->
+<div class="overlay" id="overlay-cibo">
+  <div class="modal">
+    <h2 id="cibo-modal-title">Aggiungi prodotto</h2>
+    <input type="hidden" id="cibo-id">
+    <div class="field">
+      <label>Nome prodotto</label>
+      <input type="text" id="cibo-nome" placeholder="es. Ceci precotti">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Quantità (numero confezioni)</label>
+        <input type="number" id="cibo-quantita" min="0" step="1" placeholder="es. 3">
+      </div>
+      <div class="field">
+        <label>Formato confezione</label>
+        <input type="text" id="cibo-formato" placeholder="es. barattolo 250g">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Categoria</label>
+<select id="cibo-categoria">
+  <option value="Frutta">Frutta</option>
+  <option value="Verdura">Verdura</option>
+  <option value="Pane">Pane</option>
+  <option value="Pasta">Pasta</option>
+  <option value="Riso">Riso</option>
+  <option value="Biscotti">Biscotti</option>
+  <option value="Legumi">Legumi</option>
+  <option value="Latte e derivati">Latte e derivati</option>
+  <option value="Formaggio">Formaggio</option>
+  <option value="Carne">Carne</option>
+  <option value="Pesce">Pesce</option>
+  <option value="Uova">Uova</option>
+  <option value="Condimenti">Condimenti</option>
+  <option value="Conserve">Conserve</option>
+  <option value="Surgelati">Surgelati</option>
+  <option value="Snack">Snack</option>
+  <option value="Bevande">Bevande</option>
+  <option value="Caffè/Tè">Caffè/Tè</option>
+  <option value="Cereali colazione">Cereali colazione</option>
+  <option value="Spezie">Spezie</option>
+  <option value="Altro">Altro</option>
+</select>
+      </div>
+      <div class="field">
+        <label>Posizione</label>
+        <select id="cibo-posizione">
+          <option value="Dispensa">Dispensa</option>
+          <option value="Frigo">Frigo</option>
+          <option value="Freezer">Freezer</option>
+          <option value="Freezer giù">Freezer giù</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Data scadenza (opzionale)</label>
+      <input type="date" id="cibo-scadenza">
+    </div>
+    <div class="field">
+      <label>Note (opzionale)</label>
+      <input type="text" id="cibo-note" placeholder="es. marca preferita, dove comprato...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary btn" id="cibo-cancel">Annulla</button>
+      <button class="btn" id="cibo-save">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CURA -->
+<div class="overlay" id="overlay-cura">
+  <div class="modal">
+    <h2 id="cura-modal-title">Aggiungi prodotto</h2>
+    <input type="hidden" id="cura-id">
+    <div class="field">
+      <label>Nome prodotto</label>
+      <input type="text" id="cura-nome" placeholder="es. Shampoo antiforfora">
+    </div>
+    <div class="field">
+      <label>Categoria</label>
+      <select id="cura-categoria">
+        <option value="Detersivi">Detersivi</option>
+        <option value="Shampoo/Bagno doccia">Shampoo/Bagno doccia</option>
+        <option value="Skincare viso">Skincare viso</option>
+        <option value="Corpo">Corpo</option>
+        <option value="Igiene">Igiene</option>
+        <option value="Altro">Altro</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Data acquisto</label>
+        <input type="date" id="cura-acquisto">
+      </div>
+      <div class="field">
+        <label>Data apertura (se già aperto)</label>
+        <input type="date" id="cura-apertura">
+      </div>
+    </div>
+    <div class="field">
+      <label>Durata stimata dopo apertura (mesi, es. PAO)</label>
+      <input type="number" id="cura-durata" min="0" step="1" placeholder="es. 12">
+    </div>
+    <div class="field">
+      <label>Note (opzionale)</label>
+      <input type="text" id="cura-note" placeholder="es. marca, dove comprato, sensazioni sulla pelle...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary btn" id="cura-cancel">Annulla</button>
+      <button class="btn" id="cura-save">Salva</button>
+    </div>
+  </div>
+</div>
+
+<script src="lib/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
