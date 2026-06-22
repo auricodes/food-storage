@@ -954,6 +954,21 @@ document.getElementById("import-btn").addEventListener("click", () => {
   document.getElementById("import-file").click();
 });
 
+// Pulisce un singolo prodotto prima di mandarlo a Supabase: i vecchi
+// backup generati da localStorage potevano contenere stringhe vuote ""
+// per campi data/numero non compilati, ma Postgres accetta solo null
+// in quei casi — "" su una colonna "date" o "int" fa fallire l'insert
+// con un errore 400 silenzioso e poco chiaro.
+function sanitizeForSupabase(item, dateFields, numberFields) {
+  const clean = { ...item };
+  dateFields.forEach(f => { if (clean[f] === "" || clean[f] === undefined) clean[f] = null; });
+  numberFields.forEach(f => {
+    if (clean[f] === "" || clean[f] === undefined) clean[f] = null;
+    else if (clean[f] !== null) clean[f] = Number(clean[f]);
+  });
+  return clean;
+}
+
 // L'import ora scrive ogni prodotto sul database condiviso (Supabase),
 // non solo nel browser locale: usiamo "upsert" così se un id esiste
 // già viene aggiornato invece di duplicato.
@@ -966,16 +981,16 @@ document.getElementById("import-file").addEventListener("change", (e) => {
       const data = JSON.parse(evt.target.result);
       if (!confirm("Questo aggiungerà/aggiornerà i dati nel database condiviso con quelli del backup. Continuare?")) return;
 
-      const importedCibo = data.cibo || [];
-      const importedCura = data.cura || [];
+      const importedCibo = (data.cibo || []).map(i => sanitizeForSupabase(i, ["scadenza"], ["quantita"]));
+      const importedCura = (data.cura || []).map(i => sanitizeForSupabase(i, ["acquisto", "apertura"], ["durata"]));
 
       if (importedCibo.length) {
         const { error } = await supabaseClient.from("cibo").upsert(importedCibo);
-        if (error) { console.error(error); alert("Errore importando i prodotti cibo."); return; }
+        if (error) { console.error(error); alert("Errore importando i prodotti cibo: " + error.message); return; }
       }
       if (importedCura.length) {
         const { error } = await supabaseClient.from("cura").upsert(importedCura);
-        if (error) { console.error(error); alert("Errore importando i prodotti cura personale."); return; }
+        if (error) { console.error(error); alert("Errore importando i prodotti cura personale: " + error.message); return; }
       }
 
       await initApp();
