@@ -429,6 +429,77 @@
 
   ::-webkit-scrollbar { width: 8px; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ============================================================
+     RESPONSIVE — schermi piccoli (telefoni)
+     Scelte fatte:
+     - Bottoni azione (Aggiungi/Esporta/Importa) vanno a capo su più
+       righe se non entrano, invece di restringersi troppo da diventare
+       illeggibili o difficili da toccare col dito.
+     - Card di navigazione (posizioni/categorie) e card prodotto diventano
+       più compatte ma restano a griglia (2 per riga), non lista singola.
+     - Il grafico passa da layout orizzontale (canvas+legenda affiancati)
+       a verticale (canvas sopra, legenda sotto): è la parte che deve
+       restare leggibile, quindi gli do priorità invece di schiacciarlo.
+     - Le stat-box piccole vanno a capo liberamente, non serve forzarle.
+     ============================================================ */
+  @media (max-width: 640px) {
+    header { padding: 16px 16px 0; }
+    h1 { font-size: 19px; }
+    .subtitle { font-size: 12px; }
+
+    nav { padding: 0 16px; overflow-x: auto; }
+    nav button { padding: 10px 10px; font-size: 13px; }
+
+    main { padding: 16px 16px 50px; }
+
+    .top-actions { flex-wrap: wrap; }
+    .top-actions .btn { flex: 1 1 auto; min-width: 0; }
+
+    .toolbar { flex-direction: column; align-items: stretch; }
+    .toolbar input[type=text], .toolbar select { width: 100%; }
+
+    .stats-layout { flex-direction: column; }
+    .stats-layout .stats-row { flex-wrap: wrap; }
+    .stat-box { flex: 1 1 calc(50% - 5px); white-space: normal; }
+
+    /* Grafico: passa a layout verticale per restare leggibile invece
+       di schiacciarsi in una riga troppo stretta */
+    .chart-box {
+      flex-direction: column;
+      min-width: 0;
+      width: 100%;
+      align-items: stretch;
+    }
+    .chart-box .chart-canvas-wrap {
+      width: 100%;
+      height: auto;
+      max-width: 220px;
+      margin: 0 auto;
+    }
+    .chart-box canvas { max-width: 220px; max-height: 220px; }
+    .chart-legend-col { max-height: none; }
+
+    /* Card di navigazione: restano a griglia ma più compatte (2 per riga) */
+    .nav-grid, .nav-grid.nav-grid-positions {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .nav-card { padding: 14px 10px; }
+    .nav-card-icon { font-size: 22px; margin-bottom: 6px; }
+    .nav-card-title { font-size: 13px; }
+    .nav-card-count { font-size: 11px; }
+    .nav-card-category { flex-direction: column; text-align: center; gap: 6px; }
+    .nav-card-category .nav-card-title { font-size: 13px; }
+
+    /* Card prodotto: una colonna, più leggibile col dito */
+    .grid { grid-template-columns: 1fr; }
+
+    .breadcrumb { font-size: 12px; }
+
+    .modal { padding: 18px; max-width: 100%; }
+    .field-row { flex-direction: column; gap: 0; }
+  }
 </style>
 </head>
 <body>
@@ -636,6 +707,7 @@
 </div>
 
 <script src="lib/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

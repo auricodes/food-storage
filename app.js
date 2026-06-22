@@ -1,29 +1,73 @@
 // ============================================================
-// STORAGE
-// Tutto vive in localStorage sotto due chiavi: "scorte_cibo" e "scorte_cura".
-// Ogni voce è un oggetto con un id univoco (timestamp + random) così
-// posso editarla/eliminarla senza ambiguità anche se due prodotti
-// hanno lo stesso nome.
+// STORAGE — ora su Supabase (database condiviso), non più localStorage
+// ============================================================
+// PRIMA: i dati vivevano nel browser (localStorage), quindi ogni
+// dispositivo aveva la sua dispensa indipendente.
+// ORA: i dati vivono in un database Postgres ospitato su Supabase,
+// quindi tu e il tuo compagno, aprendo questa pagina da due PC
+// diversi, vedete e modificate gli stessi identici dati.
+//
+// Configurazione: Project URL e anon key del progetto Supabase.
+// La "anon key" è pensata per essere usata lato client (nel browser),
+// non è una password segreta — è normale che sia qui nel codice.
 // ============================================================
 
-const STORAGE_KEYS = { cibo: "scorte_cibo", cura: "scorte_cura" };
+const SUPABASE_URL = "https://biomtgkflxlcjwtdmuub.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpb210Z2tmbHhsY2p3dGRtdXViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNjYwODIsImV4cCI6MjA5NzY0MjA4Mn0.lDYK142R79S0YvmstOxtcQaJo7waItbcTDiH2lpsb70";
 
-function loadData(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error("Errore lettura storage", e);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Le tabelle Supabase usano colonne minuscole standard (nome, quantita,
+// formato, categoria, posizione, scadenza, note / nome, categoria,
+// acquisto, apertura, durata, note) — stessa struttura che avevi già
+// in JSON, quindi nessuna conversione complicata necessaria.
+
+async function loadDataRemote(table) {
+  const { data, error } = await supabaseClient.from(table).select("*");
+  if (error) {
+    console.error(`Errore lettura tabella ${table}`, error);
+    alert(`Errore di connessione al database (${table}). Controlla la connessione internet e riprova.`);
     return [];
   }
+  return data || [];
 }
 
-function saveData(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
+async function insertRemote(table, payload) {
+  const { error } = await supabaseClient.from(table).insert(payload);
+  if (error) {
+    console.error(`Errore inserimento in ${table}`, error);
+    alert("Errore durante il salvataggio. Riprova.");
+    return false;
+  }
+  return true;
 }
 
-let cibo = loadData(STORAGE_KEYS.cibo);
-let cura = loadData(STORAGE_KEYS.cura);
+async function updateRemote(table, id, payload) {
+  const { error } = await supabaseClient.from(table).update(payload).eq("id", id);
+  if (error) {
+    console.error(`Errore aggiornamento in ${table}`, error);
+    alert("Errore durante l'aggiornamento. Riprova.");
+    return false;
+  }
+  return true;
+}
+
+async function deleteRemote(table, id) {
+  const { error } = await supabaseClient.from(table).delete().eq("id", id);
+  if (error) {
+    console.error(`Errore eliminazione in ${table}`, error);
+    alert("Errore durante l'eliminazione. Riprova.");
+    return false;
+  }
+  return true;
+}
+
+// Stato locale in memoria: viene popolato leggendo da Supabase all'avvio
+// e tenuto sincronizzato dopo ogni operazione, così il resto del codice
+// (drill-down, grafico, filtri) continua a leggere semplicemente "cibo"
+// e "cura" come prima, senza dover essere riscritto da capo.
+let cibo = [];
+let cura = [];
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -604,18 +648,25 @@ function renderCibo() {
   }
 }
 
-function adjustQty(id, delta) {
+// adjustQty/deleteCibo ora scrivono su Supabase (await) e poi
+// aggiornano lo stato locale solo se l'operazione remota è andata a buon fine,
+// così se la rete cade non si crea un disallineamento tra ciò che vedi
+// e ciò che è davvero salvato nel database condiviso.
+async function adjustQty(id, delta) {
   const item = cibo.find(i => i.id === id);
   if (!item) return;
-  item.quantita = Math.max(0, (parseInt(item.quantita) || 0) + delta);
-  saveData(STORAGE_KEYS.cibo, cibo);
+  const newQty = Math.max(0, (parseInt(item.quantita) || 0) + delta);
+  const ok = await updateRemote("cibo", id, { quantita: newQty });
+  if (!ok) return;
+  item.quantita = newQty;
   renderCibo();
 }
 
-function deleteCibo(id) {
+async function deleteCibo(id) {
   if (!confirm("Eliminare questo prodotto?")) return;
+  const ok = await deleteRemote("cibo", id);
+  if (!ok) return;
   cibo = cibo.filter(i => i.id !== id);
-  saveData(STORAGE_KEYS.cibo, cibo);
   renderCibo();
 }
 
@@ -669,7 +720,7 @@ function closeCiboModal() {
 document.getElementById("add-cibo-btn").addEventListener("click", () => openCiboModal());
 document.getElementById("cibo-cancel").addEventListener("click", closeCiboModal);
 
-document.getElementById("cibo-save").addEventListener("click", () => {
+document.getElementById("cibo-save").addEventListener("click", async () => {
   const nome = document.getElementById("cibo-nome").value.trim();
   if (!nome) { alert("Inserisci almeno il nome del prodotto"); return; }
 
@@ -680,18 +731,28 @@ document.getElementById("cibo-save").addEventListener("click", () => {
     formato: document.getElementById("cibo-formato").value.trim(),
     categoria: document.getElementById("cibo-categoria").value.trim(),
     posizione: document.getElementById("cibo-posizione").value,
-    scadenza: document.getElementById("cibo-scadenza").value,
+    scadenza: document.getElementById("cibo-scadenza").value || null,
     note: document.getElementById("cibo-note").value.trim(),
   };
 
+  const saveBtn = document.getElementById("cibo-save");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Salvataggio...";
+
   if (id) {
-    const item = cibo.find(i => i.id === id);
-    Object.assign(item, payload);
+    const ok = await updateRemote("cibo", id, payload);
+    if (ok) {
+      const item = cibo.find(i => i.id === id);
+      Object.assign(item, payload);
+    }
   } else {
-    cibo.push({ id: uid(), ...payload });
+    const newItem = { id: uid(), ...payload };
+    const ok = await insertRemote("cibo", newItem);
+    if (ok) cibo.push(newItem);
   }
 
-  saveData(STORAGE_KEYS.cibo, cibo);
+  saveBtn.disabled = false;
+  saveBtn.textContent = "Salva";
   closeCiboModal();
   renderCibo();
 });
@@ -781,18 +842,21 @@ function renderCura() {
   container.innerHTML = html;
 }
 
-function markOpened(id) {
+async function markOpened(id) {
   const item = cura.find(i => i.id === id);
   if (!item) return;
-  item.apertura = new Date().toISOString().slice(0, 10);
-  saveData(STORAGE_KEYS.cura, cura);
+  const today = new Date().toISOString().slice(0, 10);
+  const ok = await updateRemote("cura", id, { apertura: today });
+  if (!ok) return;
+  item.apertura = today;
   renderCura();
 }
 
-function deleteCura(id) {
+async function deleteCura(id) {
   if (!confirm("Eliminare questo prodotto?")) return;
+  const ok = await deleteRemote("cura", id);
+  if (!ok) return;
   cura = cura.filter(i => i.id !== id);
-  saveData(STORAGE_KEYS.cura, cura);
   renderCura();
 }
 
@@ -835,7 +899,7 @@ function closeCuraModal() {
 document.getElementById("add-cura-btn").addEventListener("click", () => openCuraModal());
 document.getElementById("cura-cancel").addEventListener("click", closeCuraModal);
 
-document.getElementById("cura-save").addEventListener("click", () => {
+document.getElementById("cura-save").addEventListener("click", async () => {
   const nome = document.getElementById("cura-nome").value.trim();
   if (!nome) { alert("Inserisci almeno il nome del prodotto"); return; }
 
@@ -843,27 +907,37 @@ document.getElementById("cura-save").addEventListener("click", () => {
   const payload = {
     nome,
     categoria: document.getElementById("cura-categoria").value,
-    acquisto: document.getElementById("cura-acquisto").value,
-    apertura: document.getElementById("cura-apertura").value,
+    acquisto: document.getElementById("cura-acquisto").value || null,
+    apertura: document.getElementById("cura-apertura").value || null,
     durata: parseInt(document.getElementById("cura-durata").value) || null,
     note: document.getElementById("cura-note").value.trim(),
   };
 
+  const saveBtn = document.getElementById("cura-save");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Salvataggio...";
+
   if (id) {
-    const item = cura.find(i => i.id === id);
-    Object.assign(item, payload);
+    const ok = await updateRemote("cura", id, payload);
+    if (ok) {
+      const item = cura.find(i => i.id === id);
+      Object.assign(item, payload);
+    }
   } else {
-    cura.push({ id: uid(), ...payload });
+    const newItem = { id: uid(), ...payload };
+    const ok = await insertRemote("cura", newItem);
+    if (ok) cura.push(newItem);
   }
 
-  saveData(STORAGE_KEYS.cura, cura);
+  saveBtn.disabled = false;
+  saveBtn.textContent = "Salva";
   closeCuraModal();
   renderCura();
 });
 
 // ============================================================
-// EXPORT / IMPORT BACKUP (json) — utile perché localStorage
-// è legato al browser/dispositivo specifico
+// EXPORT / IMPORT BACKUP (json) — utile come copia di sicurezza
+// indipendente dal database, scaricabile in locale in qualsiasi momento
 // ============================================================
 document.getElementById("export-btn").addEventListener("click", () => {
   const backup = { cibo, cura, exportedAt: new Date().toISOString() };
@@ -880,22 +954,34 @@ document.getElementById("import-btn").addEventListener("click", () => {
   document.getElementById("import-file").click();
 });
 
+// L'import ora scrive ogni prodotto sul database condiviso (Supabase),
+// non solo nel browser locale: usiamo "upsert" così se un id esiste
+// già viene aggiornato invece di duplicato.
 document.getElementById("import-file").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (evt) => {
+  reader.onload = async (evt) => {
     try {
       const data = JSON.parse(evt.target.result);
-      if (!confirm("Questo sovrascriverà i dati attuali con quelli del backup. Continuare?")) return;
-      cibo = data.cibo || [];
-      cura = data.cura || [];
-      saveData(STORAGE_KEYS.cibo, cibo);
-      saveData(STORAGE_KEYS.cura, cura);
-      goToPositions();
-      renderCura();
+      if (!confirm("Questo aggiungerà/aggiornerà i dati nel database condiviso con quelli del backup. Continuare?")) return;
+
+      const importedCibo = data.cibo || [];
+      const importedCura = data.cura || [];
+
+      if (importedCibo.length) {
+        const { error } = await supabaseClient.from("cibo").upsert(importedCibo);
+        if (error) { console.error(error); alert("Errore importando i prodotti cibo."); return; }
+      }
+      if (importedCura.length) {
+        const { error } = await supabaseClient.from("cura").upsert(importedCura);
+        if (error) { console.error(error); alert("Errore importando i prodotti cura personale."); return; }
+      }
+
+      await initApp();
       alert("Backup importato correttamente.");
     } catch (err) {
+      console.error(err);
       alert("File non valido.");
     }
   };
@@ -921,7 +1007,24 @@ document.querySelectorAll(".overlay").forEach(ov => {
 });
 
 // ============================================================
-// INIT
+// INIT — carica i dati da Supabase all'avvio, poi fa il primo render.
+// Mostra un piccolo indicatore di caricamento perché ora, a differenza
+// di localStorage, leggere i dati richiede una richiesta di rete e non
+// è istantaneo.
 // ============================================================
-renderCibo();
-renderCura();
+async function initApp() {
+  document.getElementById("cibo-content").innerHTML = `<div class="empty-state">Caricamento dati...</div>`;
+  document.getElementById("cura-content").innerHTML = `<div class="empty-state">Caricamento dati...</div>`;
+
+  const [ciboData, curaData] = await Promise.all([
+    loadDataRemote("cibo"),
+    loadDataRemote("cura"),
+  ]);
+  cibo = ciboData;
+  cura = curaData;
+
+  goToPositions();
+  renderCura();
+}
+
+initApp();
