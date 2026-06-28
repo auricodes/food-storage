@@ -68,6 +68,7 @@ async function deleteRemote(table, id) {
 // e "cura" come prima, senza dover essere riscritto da capo.
 let cibo = [];
 let cura = [];
+let listaSpesa = [];
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -758,8 +759,42 @@ document.getElementById("cibo-save").addEventListener("click", async () => {
 });
 
 // ============================================================
-// RENDER CURA PERSONALE (invariato, nessun drill-down richiesto qui)
+// CURA PERSONALE — drill-down a 2 macro-categorie:
+// "Detersivi & Pulizie"  -> direttamente ai prodotti (nessuna sotto-categoria)
+// "Cura personale"       -> 4 categorie specifiche (Skincare, Corpo,
+//                           Igiene, Capelli) -> prodotti
+// "Posizione" (Bagno/Cucina/Balcone) NON è un livello di navigazione:
+// è solo un tag opzionale mostrato sulla card, esattamente come la
+// quantità, perché l'utente l'ha richiesto così esplicitamente.
 // ============================================================
+let curaView = "macro"; // "macro" | "categories" | "products"
+let curaSelectedMacro = null;
+let curaSelectedCategory = null;
+
+const CURA_MACRO = [
+  { key: "Detersivi & Pulizie", icon: "🧹", hasSubcategories: false },
+  { key: "Cura personale", icon: "🧴", hasSubcategories: true },
+];
+const CURA_SUBCATEGORIES = ["Skincare", "Corpo", "Igiene", "Capelli"];
+
+// Palette azzurra/fresca per la cura personale, distinta da quella
+// del cibo così le due sezioni si riconoscono visivamente a colpo d'occhio.
+const CURA_CATEGORY_COLORS = {
+  "Detersivi & Pulizie": "#5b8cff",
+  "Skincare":            "#6fb8e0",
+  "Corpo":               "#8fd0d8",
+  "Igiene":              "#7aa8e8",
+  "Capelli":             "#4ea8c8",
+};
+
+function colorForCuraCategory(cat) {
+  if (!cat) return "#7a7f8a";
+  if (CURA_CATEGORY_COLORS[cat]) return CURA_CATEGORY_COLORS[cat];
+  let hash = 0;
+  for (let i = 0; i < cat.length; i++) hash = (hash * 31 + cat.charCodeAt(i)) % 360;
+  return `hsl(${hash}, 60%, 60%)`;
+}
+
 function renderCuraStats() {
   const total = cura.length;
   const aperti = cura.filter(i => i.apertura).length;
@@ -775,17 +810,210 @@ function renderCuraStats() {
   `;
 }
 
-function renderCura() {
-  renderCuraStats();
+function populateCuraCategoryFilter() {
+  const cats = [...new Set([...CURA_SUBCATEGORIES, "Detersivi & Pulizie", ...cura.map(i => i.categoria).filter(Boolean)])].sort();
+  const filterSel = document.getElementById("cura-filter-cat");
+  const current = filterSel.value;
+  filterSel.innerHTML = '<option value="">Tutte le categorie</option>' +
+    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  filterSel.value = current;
+}
 
+// ============================================================
+// GRAFICO A CIAMBELLA CURA PERSONALE — stessa logica del cibo:
+// conta la QUANTITÀ totale per categoria (non solo il numero di
+// prodotti diversi), usando la palette azzurra dedicata.
+// ============================================================
+let curaChartInstance = null;
+
+function renderCuraChart() {
+  const canvas = document.getElementById("cura-chart");
+  const legendEl = document.getElementById("cura-chart-legend");
+
+  if (typeof Chart === "undefined") {
+    canvas.style.display = "none";
+    legendEl.innerHTML = `<div class="chart-empty">⚠️ Chart.js non caricato.</div>`;
+    return;
+  }
+
+  const totals = {};
+  cura.forEach(item => {
+    const cat = item.categoria || item.macrocategoria || "Altro";
+    totals[cat] = (totals[cat] || 0) + (parseInt(item.quantita) || 0);
+  });
+
+  const entries = Object.entries(totals).filter(([, qty]) => qty > 0);
+  entries.sort((a, b) => b[1] - a[1]);
+
+  if (entries.length === 0) {
+    if (curaChartInstance) { curaChartInstance.destroy(); curaChartInstance = null; }
+    canvas.style.display = "none";
+    legendEl.innerHTML = `<div class="chart-empty">Nessun dato ancora</div>`;
+    return;
+  }
+  canvas.style.display = "block";
+
+  const labels = entries.map(([cat]) => cat);
+  const data = entries.map(([, qty]) => qty);
+  const colors = labels.map(cat => colorForCuraCategory(cat));
+
+  if (curaChartInstance) {
+    curaChartInstance.data.labels = labels;
+    curaChartInstance.data.datasets[0].data = data;
+    curaChartInstance.data.datasets[0].backgroundColor = colors;
+    curaChartInstance.update();
+  } else {
+    curaChartInstance = new Chart(canvas, {
+      type: "doughnut",
+      data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: "#feffd2", borderWidth: 2 }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        cutout: "58%",
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed} pz` } },
+        },
+      },
+    });
+  }
+
+  legendEl.innerHTML = `<div class="chart-legend">` + entries.map(([cat, qty]) => `
+    <div class="chart-legend-item">
+      <span class="chart-legend-dot" style="background:${colorForCuraCategory(cat)}"></span>
+      ${escapeHtml(cat)} (${qty})
+    </div>
+  `).join("") + `</div>`;
+}
+
+// ============================================================
+// BREADCRUMB CURA
+// ============================================================
+function renderCuraBreadcrumb() {
+  const el = document.getElementById("cura-breadcrumb");
+  let html = `<span class="breadcrumb-link" onclick="goToCuraMacro()">Tutte le categorie</span>`;
+
+  if (curaView === "macro") {
+    el.innerHTML = `<span class="breadcrumb-current">Tutte le categorie</span>`;
+    return;
+  }
+
+  if (curaSelectedMacro) {
+    if (curaView === "categories") {
+      html += ` <span class="breadcrumb-sep">›</span> <span class="breadcrumb-current">${escapeHtml(curaSelectedMacro)}</span>`;
+    } else {
+      html += ` <span class="breadcrumb-sep">›</span> <span class="breadcrumb-link" onclick="goToCuraCategories('${escapeHtml(curaSelectedMacro)}')">${escapeHtml(curaSelectedMacro)}</span>`;
+    }
+  }
+  if (curaView === "products" && curaSelectedCategory) {
+    html += ` <span class="breadcrumb-sep">›</span> <span class="breadcrumb-current">${escapeHtml(curaSelectedCategory)}</span>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// Funzioni di navigazione richiamate dagli onclick nell'HTML generato
+function goToCuraMacro() {
+  curaView = "macro";
+  curaSelectedMacro = null;
+  curaSelectedCategory = null;
+  document.getElementById("cura-search").value = "";
+  renderCura();
+}
+
+function goToCuraCategories(macro) {
+  const macroInfo = CURA_MACRO.find(m => m.key === macro);
+  curaSelectedMacro = macro;
+  curaSelectedCategory = null;
+  document.getElementById("cura-search").value = "";
+  if (macroInfo && macroInfo.hasSubcategories) {
+    curaView = "categories";
+  } else {
+    // "Detersivi & Pulizie" non ha sotto-categorie: si salta dritto ai prodotti
+    curaView = "products";
+  }
+  renderCura();
+}
+
+function goToCuraProducts(macro, category) {
+  curaView = "products";
+  curaSelectedMacro = macro;
+  curaSelectedCategory = category;
+  renderCura();
+}
+
+// ============================================================
+// VISTA 1 — le 2 macro-card iniziali
+// ============================================================
+function renderCuraMacroView() {
+  const container = document.getElementById("cura-content");
+
+  if (cura.length === 0) {
+    container.innerHTML = `<div class="empty-state">Nessun prodotto. Aggiungine uno con il bottone qui sopra.</div>`;
+    return;
+  }
+
+  let html = `<div class="nav-grid nav-grid-positions">`;
+  CURA_MACRO.forEach(macro => {
+    const items = cura.filter(i => (i.macrocategoria || "Cura personale") === macro.key);
+    const totQty = items.reduce((sum, i) => sum + (parseInt(i.quantita) || 0), 0);
+    html += `
+      <div class="nav-card" onclick="goToCuraCategories('${macro.key}')">
+        <span class="nav-card-icon">${macro.icon}</span>
+        <div class="nav-card-title">${macro.key}</div>
+        <div class="nav-card-count">${items.length} prodott${items.length === 1 ? 'o' : 'i'} · ${totQty} pz</div>
+      </div>`;
+  });
+  html += `</div>`;
+
+  container.innerHTML = html;
+}
+
+// ============================================================
+// VISTA 2 — categorie specifiche (solo sotto "Cura personale")
+// ============================================================
+function renderCuraCategoriesView(macro) {
+  const container = document.getElementById("cura-content");
+  const itemsInMacro = cura.filter(i => (i.macrocategoria || "Cura personale") === macro);
+
+  let html = `<div class="nav-grid">`;
+  CURA_SUBCATEGORIES.forEach(cat => {
+    const items = itemsInMacro.filter(i => i.categoria === cat);
+    const totQty = items.reduce((sum, i) => sum + (parseInt(i.quantita) || 0), 0);
+    html += `
+      <div class="nav-card nav-card-category" onclick="goToCuraProducts('${escapeHtml(macro)}', '${cat}')">
+        <span class="cat-swatch" style="background:${colorForCuraCategory(cat)}"></span>
+        <div>
+          <div class="nav-card-title">${cat}</div>
+          <div class="nav-card-count">${items.length} prodott${items.length === 1 ? 'o' : 'i'} · ${totQty} pz</div>
+        </div>
+      </div>`;
+  });
+  html += `</div>`;
+
+  container.innerHTML = html;
+}
+
+// ============================================================
+// VISTA 3 — PRODOTTI, anche usata dalla ricerca testuale libera
+// ============================================================
+function renderCuraProductsView({ isSearch = false } = {}) {
   const search = document.getElementById("cura-search").value.toLowerCase();
   const filterCat = document.getElementById("cura-filter-cat").value;
   const sortBy = document.getElementById("cura-sort").value;
 
   let filtered = cura.filter(i => {
     const matchSearch = !search || i.nome.toLowerCase().includes(search);
-    const matchCat = !filterCat || i.categoria === filterCat;
-    return matchSearch && matchCat;
+    if (isSearch) {
+      const matchCat = !filterCat || i.categoria === filterCat || i.macrocategoria === filterCat;
+      return matchSearch && matchCat;
+    }
+    const matchMacro = (i.macrocategoria || "Cura personale") === curaSelectedMacro;
+    const macroInfo = CURA_MACRO.find(m => m.key === curaSelectedMacro);
+    if (macroInfo && !macroInfo.hasSubcategories) {
+      return matchSearch && matchMacro;
+    }
+    return matchSearch && matchMacro && i.categoria === curaSelectedCategory;
   });
 
   filtered.sort((a, b) => {
@@ -798,48 +1026,71 @@ function renderCura() {
 
   const container = document.getElementById("cura-content");
   if (filtered.length === 0) {
-    container.innerHTML = `<div class="empty-state">Nessun prodotto trovato. Aggiungine uno con il bottone qui sopra.</div>`;
+    container.innerHTML = `<div class="empty-state">Nessun prodotto trovato.</div>`;
     return;
   }
 
-  const grouped = {};
-  filtered.forEach(i => {
-    const cat = i.categoria || "Altro";
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(i);
-  });
+  container.innerHTML = `<div class="grid">${filtered.map(renderCuraProductCard).join("")}</div>`;
+}
 
-  let html = "";
-  for (const [cat, items] of Object.entries(grouped)) {
-    html += `<div class="section-group">
-      <div class="section-title">${escapeHtml(cat)} <span class="count-badge">${items.length}</span></div>
-      <div class="grid">`;
-    items.forEach(item => {
-      const status = curaStatus(item);
-      html += `
-        <div class="item-card">
-          <div class="item-top">
-            <div class="item-name">${escapeHtml(item.nome)}</div>
-          </div>
-          <div class="item-meta">
-            ${item.acquisto ? `Acquistato: ${formatDate(item.acquisto)}` : ""}
-            ${item.apertura ? ` · Aperto: ${formatDate(item.apertura)}` : ""}
-          </div>
-          <div class="item-tags">
-            <span class="tag ${status.cls}">${status.label}</span>
-          </div>
-          ${item.note ? `<div class="item-meta" style="margin-top:6px">📝 ${escapeHtml(item.note)}</div>` : ""}
-          <div class="item-actions">
-            ${!item.apertura ? `<button onclick="markOpened('${item.id}')">Segna come aperto</button>` : ""}
-            <button onclick="openCuraModal('${item.id}')">Modifica</button>
-            <button onclick="deleteCura('${item.id}')">🗑</button>
-          </div>
-        </div>`;
-    });
-    html += `</div></div>`;
+// Card prodotto cura personale, identica per struttura a quella del
+// cibo: tag categoria colorato, quantità in blu con × davanti
+// (stessa classe .item-qty del cibo, già colorata con var(--accent)).
+function renderCuraProductCard(item) {
+  const status = curaStatus(item);
+  const catLabel = item.categoria || item.macrocategoria || "Altro";
+  return `
+    <div class="item-card">
+      <div class="item-top">
+        <div class="item-name">${escapeHtml(item.nome)}</div>
+        <div class="item-qty">×${item.quantita ?? 1}</div>
+      </div>
+      <div class="item-meta">
+        ${item.acquisto ? `Acquistato: ${formatDate(item.acquisto)}` : ""}
+        ${item.apertura ? ` · Aperto: ${formatDate(item.apertura)}` : ""}
+      </div>
+      <div class="item-tags">
+        <span class="tag" style="background:${colorForCuraCategory(catLabel)};color:#ffffff">${escapeHtml(catLabel)}</span>
+        <span class="tag ${status.cls}">${status.label}</span>
+        ${item.posizione ? `<span class="tag">${escapeHtml(item.posizione)}</span>` : ""}
+      </div>
+      ${item.note ? `<div class="item-meta" style="margin-top:6px">📝 ${escapeHtml(item.note)}</div>` : ""}
+      <div class="item-actions">
+        ${!item.apertura ? `<button onclick="markOpened('${item.id}')">Segna come aperto</button>` : ""}
+        <button onclick="openCuraModal('${item.id}')">Modifica</button>
+        <button onclick="deleteCura('${item.id}')">🗑</button>
+      </div>
+    </div>`;
+}
+
+// ============================================================
+// ORCHESTRATORE CURA PERSONALE
+// ============================================================
+function renderCura() {
+  renderCuraStats();
+  renderCuraChart();
+  populateCuraCategoryFilter();
+  renderCuraBreadcrumb();
+
+  const search = document.getElementById("cura-search").value.trim();
+  const toolbar = document.getElementById("cura-toolbar");
+
+  if (search) {
+    toolbar.style.display = "flex";
+    renderCuraProductsView({ isSearch: true });
+    return;
   }
 
-  container.innerHTML = html;
+  if (curaView === "macro") {
+    toolbar.style.display = "none";
+    renderCuraMacroView();
+  } else if (curaView === "categories") {
+    toolbar.style.display = "none";
+    renderCuraCategoriesView(curaSelectedMacro);
+  } else {
+    toolbar.style.display = "flex";
+    renderCuraProductsView({ isSearch: false });
+  }
 }
 
 async function markOpened(id) {
@@ -862,12 +1113,25 @@ async function deleteCura(id) {
 
 // ============================================================
 // MODAL CURA
+// Il campo "Categoria" specifica è visibile solo quando la
+// macro-categoria scelta è "Cura personale" — sotto "Detersivi &
+// Pulizie" non esistono sotto-categorie, quindi il campo si nasconde.
 // ============================================================
+function updateCuraCategoryFieldVisibility() {
+  const macro = document.getElementById("cura-macrocategoria").value;
+  const catField = document.getElementById("cura-categoria-field");
+  catField.style.display = (macro === "Cura personale") ? "block" : "none";
+}
+document.getElementById("cura-macrocategoria").addEventListener("change", updateCuraCategoryFieldVisibility);
+
 function openCuraModal(id = null) {
   const overlay = document.getElementById("overlay-cura");
   document.getElementById("cura-id").value = "";
   document.getElementById("cura-nome").value = "";
-  document.getElementById("cura-categoria").value = "Detersivi";
+  document.getElementById("cura-quantita").value = "1";
+  document.getElementById("cura-posizione").value = "";
+  document.getElementById("cura-macrocategoria").value = curaSelectedMacro || "Detersivi & Pulizie";
+  document.getElementById("cura-categoria").value = curaSelectedCategory || "Skincare";
   document.getElementById("cura-acquisto").value = new Date().toISOString().slice(0,10);
   document.getElementById("cura-apertura").value = "";
   document.getElementById("cura-durata").value = "";
@@ -879,7 +1143,10 @@ function openCuraModal(id = null) {
       document.getElementById("cura-modal-title").textContent = "Modifica prodotto";
       document.getElementById("cura-id").value = item.id;
       document.getElementById("cura-nome").value = item.nome;
-      document.getElementById("cura-categoria").value = item.categoria || "Altro";
+      document.getElementById("cura-quantita").value = item.quantita ?? 1;
+      document.getElementById("cura-posizione").value = item.posizione || "";
+      document.getElementById("cura-macrocategoria").value = item.macrocategoria || "Cura personale";
+      document.getElementById("cura-categoria").value = item.categoria || "Skincare";
       document.getElementById("cura-acquisto").value = item.acquisto || "";
       document.getElementById("cura-apertura").value = item.apertura || "";
       document.getElementById("cura-durata").value = item.durata || "";
@@ -888,6 +1155,7 @@ function openCuraModal(id = null) {
   } else {
     document.getElementById("cura-modal-title").textContent = "Aggiungi prodotto";
   }
+  updateCuraCategoryFieldVisibility();
   overlay.classList.add("show");
   document.getElementById("cura-nome").focus();
 }
@@ -903,10 +1171,17 @@ document.getElementById("cura-save").addEventListener("click", async () => {
   const nome = document.getElementById("cura-nome").value.trim();
   if (!nome) { alert("Inserisci almeno il nome del prodotto"); return; }
 
+  const macrocategoria = document.getElementById("cura-macrocategoria").value;
   const id = document.getElementById("cura-id").value;
   const payload = {
     nome,
-    categoria: document.getElementById("cura-categoria").value,
+    quantita: parseInt(document.getElementById("cura-quantita").value) || 0,
+    posizione: document.getElementById("cura-posizione").value || null,
+    macrocategoria,
+    // La categoria specifica esiste solo sotto "Cura personale";
+    // per "Detersivi & Pulizie" resta null, coerente col fatto che
+    // quella macro-categoria non ha sotto-categorie.
+    categoria: macrocategoria === "Cura personale" ? document.getElementById("cura-categoria").value : null,
     acquisto: document.getElementById("cura-acquisto").value || null,
     apertura: document.getElementById("cura-apertura").value || null,
     durata: parseInt(document.getElementById("cura-durata").value) || null,
@@ -1022,6 +1297,78 @@ document.querySelectorAll(".overlay").forEach(ov => {
 });
 
 // ============================================================
+// POST-IT — LISTA DELLA SPESA
+// Lista libera per appuntarsi al volo cosa manca (es. "Zucchine"),
+// condivisa tra tutti i dispositivi tramite Supabase, stesso pattern
+// usato per cibo/cura. Resta sempre visibile, anche vuota — in quel
+// caso mostra solo un placeholder discreto invece di sparire.
+// Gli elementi spuntati restano visibili (sbarrati) finché non vengono
+// eliminati manualmente, così si vede "fatto" prima che scompaia.
+// ============================================================
+function renderPostit() {
+  const listEl = document.getElementById("postit-list");
+
+  if (listaSpesa.length === 0) {
+    listEl.innerHTML = `<div class="postit-empty">Niente da comprare per ora...</div>`;
+    return;
+  }
+
+  // I non fatti prima, i fatti (sbarrati) in fondo — più utile da leggere al volo
+  const sorted = [...listaSpesa].sort((a, b) => {
+    if (a.fatto === b.fatto) return new Date(a.created_at) - new Date(b.created_at);
+    return a.fatto ? 1 : -1;
+  });
+
+  listEl.innerHTML = sorted.map(item => `
+    <div class="postit-item ${item.fatto ? 'done' : ''}">
+      <input type="checkbox" ${item.fatto ? 'checked' : ''} onchange="togglePostitItem('${item.id}')">
+      <span class="postit-item-text">${escapeHtml(item.testo)}</span>
+      <button class="postit-item-delete" onclick="deletePostitItem('${item.id}')">✕</button>
+    </div>
+  `).join("");
+}
+
+async function addPostitItem() {
+  const input = document.getElementById("postit-input");
+  const btn = document.getElementById("postit-add-btn");
+  const testo = input.value.trim();
+  if (!testo) return;
+
+  btn.disabled = true;
+  const newItem = { id: uid(), testo, fatto: false, created_at: new Date().toISOString() };
+  const ok = await insertRemote("lista_spesa", newItem);
+  btn.disabled = false;
+  if (!ok) return; // insertRemote mostra già un alert con l'errore esatto se fallisce
+
+  listaSpesa.push(newItem);
+  input.value = "";
+  renderPostit();
+  input.focus();
+}
+
+async function togglePostitItem(id) {
+  const item = listaSpesa.find(i => i.id === id);
+  if (!item) return;
+  const newFatto = !item.fatto;
+  const ok = await updateRemote("lista_spesa", id, { fatto: newFatto });
+  if (!ok) return;
+  item.fatto = newFatto;
+  renderPostit();
+}
+
+async function deletePostitItem(id) {
+  const ok = await deleteRemote("lista_spesa", id);
+  if (!ok) return;
+  listaSpesa = listaSpesa.filter(i => i.id !== id);
+  renderPostit();
+}
+
+document.getElementById("postit-add-btn").addEventListener("click", addPostitItem);
+document.getElementById("postit-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") addPostitItem();
+});
+
+// ============================================================
 // INIT — carica i dati da Supabase all'avvio, poi fa il primo render.
 // Mostra un piccolo indicatore di caricamento perché ora, a differenza
 // di localStorage, leggere i dati richiede una richiesta di rete e non
@@ -1031,15 +1378,18 @@ async function initApp() {
   document.getElementById("cibo-content").innerHTML = `<div class="empty-state">Caricamento dati...</div>`;
   document.getElementById("cura-content").innerHTML = `<div class="empty-state">Caricamento dati...</div>`;
 
-  const [ciboData, curaData] = await Promise.all([
+  const [ciboData, curaData, listaSpesaData] = await Promise.all([
     loadDataRemote("cibo"),
     loadDataRemote("cura"),
+    loadDataRemote("lista_spesa"),
   ]);
   cibo = ciboData;
   cura = curaData;
+  listaSpesa = listaSpesaData;
 
   goToPositions();
-  renderCura();
+  goToCuraMacro();
+  renderPostit();
 }
 
 initApp();

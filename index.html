@@ -427,6 +427,103 @@
   }
   .nav-card-category .nav-card-title { margin-bottom: 0; font-size: 14px; }
 
+  /* ============================================================
+     LISTA DELLA SPESA
+     Riquadro nello stesso stile delle altre card dell'app (stesso
+     sfondo, bordo, raggio), posizionato nello spazio tra le
+     statistiche e il grafico. Resta sempre visibile, anche vuoto.
+     ============================================================ */
+  .postit {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    display: flex;
+    flex-direction: column;
+  }
+  .postit-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .postit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+    flex: 1;
+  }
+  .postit-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .postit-item input[type=checkbox] {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+  .postit-item-text {
+    flex: 1;
+    word-break: break-word;
+  }
+  .postit-item.done .postit-item-text {
+    text-decoration: line-through;
+    opacity: 0.55;
+  }
+  .postit-item-delete {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    flex-shrink: 0;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+  .postit-item-delete:hover { opacity: 1; }
+  .postit-empty {
+    font-size: 12px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    font-style: italic;
+  }
+  .postit-add-row {
+    display: flex;
+    gap: 8px;
+  }
+  .postit-add-row input[type=text] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 13px;
+    color: var(--text);
+    font-family: inherit;
+  }
+  .postit-add-btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    width: 34px;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .postit-add-btn:hover { opacity: 0.85; }
+
   ::-webkit-scrollbar { width: 8px; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
@@ -452,6 +549,7 @@
     nav button { padding: 10px 10px; font-size: 13px; }
 
     main { padding: 16px 16px 50px; }
+
 
     .top-actions { flex-wrap: wrap; }
     .top-actions .btn { flex: 1 1 auto; min-width: 0; }
@@ -528,6 +626,15 @@
       </div>
     </div>
 
+    <div class="postit">
+      <div class="postit-title">Lista della spesa</div>
+      <div class="postit-list" id="postit-list"></div>
+      <div class="postit-add-row">
+        <input type="text" id="postit-input" placeholder="es. Zucchine...">
+        <button type="button" class="postit-add-btn" id="postit-add-btn">+</button>
+      </div>
+    </div>
+
     <div class="top-actions">
       <button class="btn" id="add-cibo-btn">+ Aggiungi prodotto</button>
       <button class="btn-secondary btn" id="export-btn">⬇ Esporta backup</button>
@@ -561,22 +668,26 @@
 
   <!-- TAB CURA PERSONALE -->
   <div id="tab-cura" class="tab-content" style="display:none">
-    <div class="stats-row" id="cura-stats"></div>
+    <div class="stats-layout">
+      <div class="stats-row" id="cura-stats"></div>
+      <div class="chart-box">
+        <div class="chart-canvas-wrap">
+          <canvas id="cura-chart"></canvas>
+        </div>
+        <div class="chart-legend-col" id="cura-chart-legend"></div>
+      </div>
+    </div>
 
     <div class="top-actions">
       <button class="btn" id="add-cura-btn">+ Aggiungi prodotto</button>
     </div>
 
-    <div class="toolbar">
+    <div class="breadcrumb" id="cura-breadcrumb"></div>
+
+    <div class="toolbar" id="cura-toolbar" style="display:none">
       <input type="text" id="cura-search" placeholder="Cerca prodotto...">
       <select id="cura-filter-cat">
         <option value="">Tutte le categorie</option>
-        <option value="Detersivi">Detersivi</option>
-        <option value="Shampoo/Bagno doccia">Shampoo/Bagno doccia</option>
-        <option value="Skincare viso">Skincare viso</option>
-        <option value="Corpo">Corpo</option>
-        <option value="Igiene">Igiene</option>
-        <option value="Altro">Altro</option>
       </select>
       <select id="cura-sort">
         <option value="apertura">In uso da più tempo</option>
@@ -670,15 +781,35 @@
       <label>Nome prodotto</label>
       <input type="text" id="cura-nome" placeholder="es. Shampoo antiforfora">
     </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Quantità</label>
+        <input type="number" id="cura-quantita" min="0" step="1" placeholder="es. 2">
+      </div>
+      <div class="field">
+        <label>Posizione (opzionale)</label>
+        <select id="cura-posizione">
+          <option value="">Nessuna</option>
+          <option value="Bagno">Bagno</option>
+          <option value="Cucina">Cucina</option>
+          <option value="Balcone">Balcone</option>
+        </select>
+      </div>
+    </div>
     <div class="field">
+      <label>Macro-categoria</label>
+      <select id="cura-macrocategoria">
+        <option value="Detersivi & Pulizie">Detersivi & Pulizie</option>
+        <option value="Cura personale">Cura personale</option>
+      </select>
+    </div>
+    <div class="field" id="cura-categoria-field">
       <label>Categoria</label>
       <select id="cura-categoria">
-        <option value="Detersivi">Detersivi</option>
-        <option value="Shampoo/Bagno doccia">Shampoo/Bagno doccia</option>
-        <option value="Skincare viso">Skincare viso</option>
+        <option value="Skincare">Skincare</option>
         <option value="Corpo">Corpo</option>
         <option value="Igiene">Igiene</option>
-        <option value="Altro">Altro</option>
+        <option value="Capelli">Capelli</option>
       </select>
     </div>
     <div class="field-row">
